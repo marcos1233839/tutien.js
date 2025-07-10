@@ -19,6 +19,7 @@ module.exports = class {
   static dataPath = path.join(__dirname, "..", "..", "system", "data", "tutien.json");
   static bossPath = path.join(__dirname, "..", "..", "system", "data", "boss.json");
   static clanPath = path.join(__dirname, "..", "..", "system", "data", "clans.json");
+  static arenaPath = path.join(__dirname, "..", "..", "system", "data", "arena.json");
 
   static factions = {
     tien: "🧘 Tu Tiên",
@@ -51,7 +52,11 @@ module.exports = class {
     // Clan items
     clanstone: { name: "🏗️ Đá Xây Dựng", price: 10, effect: "Nâng cấp công trình clan" },
     clanbuff: { name: "⚡ Buff Clan", price: 8, effect: "+50% EXP cho toàn clan trong 1h" },
-    clantoken: { name: "🎖️ Token Clan", price: 15, effect: "Dùng để tham gia event clan" }
+    clantoken: { name: "🎖️ Token Clan", price: 15, effect: "Dùng để tham gia event clan" },
+    
+    // Arena items
+    arenabuff: { name: "⚔️ Arena Buff", price: 12, effect: "+30% sức mạnh arena trong 1 giờ" },
+    arenaticket: { name: "🎫 Arena Ticket", price: 20, effect: "Reset cooldown arena ngay lập tức" }
   };
 
   static bossList = [
@@ -72,6 +77,38 @@ module.exports = class {
     "🦄 Kỳ Lân", "🐵 Khỉ Thông Minh", "🦅 Ưng Lửa", "🐍 Xà Tinh", "🦖 Khủng Long",
     "👻 Bóng Ma", "🦂 Bọ Cạp Lửa", "🐺 Sói Băng", "🐉 Long Linh", "🧚 Tiên Linh",
     "💀 Lich", "🔥 Phượng Hoàng", "🌪️ Rồng Gió", "⚡ Rồng Sấm", "🌌 Rồng Vũ Trụ"
+  ];
+
+  static arenaOpponents = [
+    // Tân thủ
+    { name: "Lão Nông", realm: 0, power: 200, reward: { exp: 500, lt: 5 }, difficulty: "Dễ" },
+    { name: "Thợ Rèn", realm: 1, power: 400, reward: { exp: 800, lt: 8 }, difficulty: "Dễ" },
+    { name: "Binh Lính", realm: 2, power: 600, reward: { exp: 1200, lt: 12 }, difficulty: "Dễ" },
+    
+    // Trung cấp
+    { name: "Hiệp Sĩ", realm: 3, power: 1000, reward: { exp: 1800, lt: 18 }, difficulty: "Trung Bình" },
+    { name: "Pháp Sư", realm: 4, power: 1500, reward: { exp: 2500, lt: 25 }, difficulty: "Trung Bình" },
+    { name: "Đại Hiệp", realm: 5, power: 2200, reward: { exp: 3500, lt: 35 }, difficulty: "Trung Bình" },
+    
+    // Cao thủ
+    { name: "Trưởng Lão", realm: 6, power: 3000, reward: { exp: 5000, lt: 50 }, difficulty: "Khó" },
+    { name: "Chưởng Môn", realm: 7, power: 4000, reward: { exp: 7000, lt: 70 }, difficulty: "Khó" },
+    { name: "Đại Tông Sư", realm: 8, power: 5500, reward: { exp: 10000, lt: 100 }, difficulty: "Khó" },
+    
+    // Huyền thoại
+    { name: "🔥 염제", realm: 8, power: 7000, reward: { exp: 15000, lt: 150, special: "🔥 Hỏa Linh Châu" }, difficulty: "Cực Khó" },
+    { name: "⚡ 뇌제", realm: 8, power: 7500, reward: { exp: 18000, lt: 180, special: "⚡ Lôi Linh Châu" }, difficulty: "Cực Khó" },
+    { name: "🌟 Hun Tiandou", realm: 8, power: 8000, reward: { exp: 20000, lt: 200, special: "🌟 Đấu Đế Chi Khí" }, difficulty: "Địa Ngục" }
+  ];
+
+  static arenaRanks = [
+    { name: "🥉 Đồng", minPoints: 0, maxPoints: 99, dailyReward: { lt: 10, exp: 500 } },
+    { name: "🥈 Bạc", minPoints: 100, maxPoints: 299, dailyReward: { lt: 25, exp: 1000 } },
+    { name: "🥇 Vàng", minPoints: 300, maxPoints: 599, dailyReward: { lt: 50, exp: 2000 } },
+    { name: "💎 Kim Cương", minPoints: 600, maxPoints: 999, dailyReward: { lt: 100, exp: 4000 } },
+    { name: "👑 Tông Sư", minPoints: 1000, maxPoints: 1999, dailyReward: { lt: 200, exp: 8000 } },
+    { name: "🌟 Đấu Thánh", minPoints: 2000, maxPoints: 4999, dailyReward: { lt: 400, exp: 15000 } },
+    { name: "🔥 Đấu Đế", minPoints: 5000, maxPoints: 999999, dailyReward: { lt: 800, exp: 30000 } }
   ];
 
   // Data management functions
@@ -151,6 +188,58 @@ module.exports = class {
     }
   }
 
+  static getArenaData() {
+    try {
+      if (!fs.existsSync(this.arenaPath)) return { rankings: {}, seasonStart: Date.now() };
+      return JSON.parse(fs.readFileSync(this.arenaPath));
+    } catch (e) {
+      console.error("[tutien] Lỗi đọc arena data:", e);
+      return { rankings: {}, seasonStart: Date.now() };
+    }
+  }
+
+  static saveArenaData(data) {
+    try {
+      fs.writeFileSync(this.arenaPath, JSON.stringify(data, null, 2));
+    } catch (e) {
+      console.error("[tutien] Lỗi lưu arena data:", e);
+    }
+  }
+
+  static getUserRank(points) {
+    for (let i = this.arenaRanks.length - 1; i >= 0; i--) {
+      const rank = this.arenaRanks[i];
+      if (points >= rank.minPoints && points <= rank.maxPoints) {
+        return rank;
+      }
+    }
+    return this.arenaRanks[0]; // Default to lowest rank
+  }
+
+  static calculatePower(user) {
+    let power = this.realms.indexOf(user.realm) * 100 + user.theChat;
+    
+    // Rebirth bonuses
+    if (user.rebirthBuffs && user.rebirthBuffs.pvpBonus) {
+      power = Math.floor(power * (1 + user.rebirthBuffs.pvpBonus));
+    }
+    
+    // Clan bonuses
+    if (user.clan) {
+      const clanData = this.getClanData();
+      if (clanData[user.clan] && clanData[user.clan].buildings?.training) {
+        power += clanData[user.clan].buildings.training * 50;
+      }
+    }
+    
+    // Arena buff
+    if (user.arenaBuffExpire && Date.now() < user.arenaBuffExpire) {
+      power = Math.floor(power * 1.3); // +30% power from arena buff
+    }
+    
+    return power;
+  }
+
   static async onLoad() {
     const dir = path.dirname(this.dataPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -160,6 +249,10 @@ module.exports = class {
       this.saveBossData(boss);
     }
     if (!fs.existsSync(this.clanPath)) fs.writeFileSync(this.clanPath, "{}");
+    if (!fs.existsSync(this.arenaPath)) {
+      const arenaData = { rankings: {}, seasonStart: Date.now() };
+      this.saveArenaData(arenaData);
+    }
   }
 
   static async onRun({ api, event, args }) {
@@ -190,7 +283,12 @@ module.exports = class {
         hideInfo: false,
         petInventory: [],
         petEquipped: null,
-        lastClanActivity: 0
+        lastClanActivity: 0,
+        arenaPoints: 0,
+        arenaWins: 0,
+        arenaLosses: 0,
+        lastArenaFight: 0,
+        arenaStreak: 0
       };
     }
 
@@ -201,10 +299,10 @@ module.exports = class {
     if (!cmd) {
       const msg = `📜 𝗧𝗨 𝗧𝗜Ê𝗡 𝗠𝗘𝗡𝗨 𝗩𝟳.𝟬\n━━━━━━━━━━━━━━━━\n` +
         `🌱 Tu luyện: train | dokiep | quest | dungeon | info\n` +
-        `🎮 Khác: pvp <@tag> | boss | phai | artifact | event\n` +
+        `🎮 Khác: pvp <@tag> | boss | phai | daupha\n` +
         `🏯 Bang hội: clan | clan create/join/leave/disband | clantop\n` +
         `🛍️ Vật phẩm: shop | buy <mã> | use <mã> | inv\n` +
-        `⚙️ Hệ thống: top | clantop | hide | pet | rebirth`;
+        `⚙️ Hệ thống: top | clantop | hide | pet | rebirth | buff`;
       return api.sendMessage(msg, threadID, messageID);
     }
 
@@ -372,6 +470,16 @@ module.exports = class {
           if (target.rebirthBuffs.dokiepBonus > 0) msg += ` | +${(target.rebirthBuffs.dokiepBonus * 100).toFixed(0)}% độ kiếp`;
           if (target.rebirthBuffs.pvpBonus > 0) msg += ` | +${(target.rebirthBuffs.pvpBonus * 100).toFixed(0)}% PvP`;
           if (target.rebirthBuffs.bossBonus > 0) msg += ` | +${(target.rebirthBuffs.bossBonus * 100).toFixed(0)}% Boss`;
+        }
+      }
+      
+      // Arena info
+      if (target.arenaPoints > 0) {
+        const rank = this.getUserRank(target.arenaPoints);
+        msg += `\n⚔️ Arena: ${rank.name} (${target.arenaPoints} pts)`;
+        if (targetID === senderID) {
+          msg += `\n📊 Arena W/L: ${target.arenaWins}/${target.arenaLosses}`;
+          if (target.arenaStreak > 0) msg += ` | 🔥${target.arenaStreak} streak`;
         }
       }
       
@@ -628,6 +736,18 @@ module.exports = class {
         clan.buffExpire = Date.now() + 3600000; // 1 hour
         this.saveClanData(clanData);
         return api.sendMessage("⚡ Đã kích hoạt buff EXP cho clan trong 1 giờ!", threadID, messageID);
+      }
+      
+      if (code === "arenabuff") {
+        user.arenaBuffExpire = Date.now() + 3600000; // 1 hour
+        this.saveAllData(data);
+        return api.sendMessage("⚔️ Đã kích hoạt buff sức mạnh arena trong 1 giờ! (+30% power)", threadID, messageID);
+      }
+      
+      if (code === "arenaticket") {
+        user.lastArenaFight = 0; // Reset cooldown
+        this.saveAllData(data);
+        return api.sendMessage("🎫 Đã reset cooldown arena! Bạn có thể đấu ngay bây giờ.", threadID, messageID);
       }
       
       this.saveAllData(data);
@@ -1007,6 +1127,259 @@ module.exports = class {
       
       if (specialRewards.length > 0) {
         msg += `\n🎁 PHẦN THƯỞNG ĐẶC BIỆT:\n${specialRewards.join('\n')}`;
+      }
+      
+      return api.sendMessage(msg, threadID, messageID);
+    }
+
+    // Enhanced Arena/Đấu Phá System
+    if (cmd === "daupha") {
+      const arenaData = this.getArenaData();
+      const sub = args[1]?.toLowerCase();
+      
+      if (!sub) {
+        const userRank = this.getUserRank(user.arenaPoints);
+        let msg = `⚔️ ĐẤU PHÁ ARENA\n━━━━━━━━━━━━\n`;
+        msg += `🏆 Hạng hiện tại: ${userRank.name}\n`;
+        msg += `🎯 Điểm: ${user.arenaPoints}\n`;
+        msg += `📊 W/L: ${user.arenaWins}/${user.arenaLosses}\n`;
+        if (user.arenaStreak > 0) msg += `🔥 Chuỗi thắng: ${user.arenaStreak}\n`;
+        msg += `\n📋 Lệnh:\n`;
+        msg += `⚔️ daupha fight - Đấu với NPC\n`;
+        msg += `🏆 daupha rank - Xem bảng xếp hạng\n`;
+        msg += `🎁 daupha reward - Nhận thưởng hàng ngày\n`;
+        msg += `📋 daupha list - Danh sách đối thủ`;
+        return api.sendMessage(msg, threadID, messageID);
+      }
+      
+      if (sub === "fight") {
+        const now = Date.now();
+        const cooldown = 300000; // 5 phút
+        
+        if (now - user.lastArenaFight < cooldown) {
+          const left = Math.ceil((cooldown - (now - user.lastArenaFight)) / 1000);
+          return api.sendMessage(`⏱️ Còn ${left}s để đấu tiếp trong arena.`, threadID, messageID);
+        }
+        
+        // Tìm đối thủ phù hợp dựa trên realm
+        const userRealmIndex = this.realms.indexOf(user.realm);
+        const suitableOpponents = this.arenaOpponents.filter(op => 
+          Math.abs(op.realm - userRealmIndex) <= 2
+        );
+        
+        if (suitableOpponents.length === 0) {
+          return api.sendMessage("❌ Không tìm thấy đối thủ phù hợp!", threadID, messageID);
+        }
+        
+        const opponent = suitableOpponents[Math.floor(Math.random() * suitableOpponents.length)];
+        const userPower = this.calculatePower(user);
+        const opponentPower = opponent.power;
+        
+        // Thêm random factor
+        const userRoll = Math.random() * 100;
+        const opponentRoll = Math.random() * 100;
+        
+        const userTotal = userPower + userRoll;
+        const opponentTotal = opponentPower + opponentRoll;
+        
+        user.lastArenaFight = now;
+        
+        let resultMsg = `⚔️ ĐẤU PHÁ vs ${opponent.name}\n━━━━━━━━━━━━\n`;
+        resultMsg += `🔋 Sức mạnh: ${userPower} vs ${opponentPower}\n`;
+        resultMsg += `🎲 Roll: ${userRoll.toFixed(0)} vs ${opponentRoll.toFixed(0)}\n\n`;
+        
+        if (userTotal > opponentTotal) {
+          // Thắng
+          const pointsGain = Math.floor(10 + (opponent.realm * 2));
+          const expGain = opponent.reward.exp;
+          const ltGain = opponent.reward.lt;
+          
+          user.arenaPoints += pointsGain;
+          user.arenaWins++;
+          user.arenaStreak++;
+          
+          // Apply rebirth exp bonus
+          let finalExpGain = expGain;
+          if (user.rebirthBuffs && user.rebirthBuffs.expMultiplier) {
+            finalExpGain = Math.floor(expGain * (1 + user.rebirthBuffs.expMultiplier));
+          }
+          
+          user.exp += finalExpGain;
+          user.linhThach += ltGain;
+          
+          resultMsg += `🎉 THẮNG!\n`;
+          resultMsg += `🎯 +${pointsGain} Arena Points\n`;
+          resultMsg += `✨ +${finalExpGain} EXP\n`;
+          resultMsg += `💎 +${ltGain} Linh Thạch\n`;
+          resultMsg += `🔥 Chuỗi thắng: ${user.arenaStreak}`;
+          
+          // Streak bonus
+          if (user.arenaStreak % 5 === 0) {
+            const streakBonus = user.arenaStreak * 10;
+            user.linhThach += streakBonus;
+            resultMsg += `\n🌟 Streak Bonus: +${streakBonus} LT!`;
+          }
+          
+          // Special reward
+          if (opponent.reward.special && Math.random() < 0.1) {
+            user.items.special = (user.items.special || 0) + 1;
+            resultMsg += `\n🎁 Rare Drop: ${opponent.reward.special}!`;
+          }
+          
+        } else {
+          // Thua
+          const pointsLoss = Math.max(1, Math.floor(user.arenaPoints * 0.05));
+          user.arenaPoints = Math.max(0, user.arenaPoints - pointsLoss);
+          user.arenaLosses++;
+          user.arenaStreak = 0;
+          
+          const consolationExp = Math.floor(opponent.reward.exp * 0.3);
+          let finalConsolationExp = consolationExp;
+          if (user.rebirthBuffs && user.rebirthBuffs.expMultiplier) {
+            finalConsolationExp = Math.floor(consolationExp * (1 + user.rebirthBuffs.expMultiplier));
+          }
+          user.exp += finalConsolationExp;
+          
+          resultMsg += `💥 THUA!\n`;
+          resultMsg += `📉 -${pointsLoss} Arena Points\n`;
+          resultMsg += `✨ +${finalConsolationExp} EXP (an ủi)\n`;
+          resultMsg += `💔 Chuỗi thắng reset`;
+        }
+        
+        // Update arena rankings
+        arenaData.rankings[senderID] = {
+          name: user.name,
+          points: user.arenaPoints,
+          wins: user.arenaWins,
+          losses: user.arenaLosses,
+          streak: user.arenaStreak
+        };
+        
+        this.saveAllData(data);
+        this.saveArenaData(arenaData);
+        return api.sendMessage(resultMsg, threadID, messageID);
+      }
+      
+      if (sub === "rank") {
+        const rankings = Object.values(arenaData.rankings)
+          .sort((a, b) => b.points - a.points)
+          .slice(0, 10);
+        
+        if (rankings.length === 0) {
+          return api.sendMessage("📊 Chưa có ai tham gia arena!", threadID, messageID);
+        }
+        
+        let msg = `🏆 BẢNG XẾP HẠNG ARENA\n━━━━━━━━━━━━\n`;
+        rankings.forEach((player, i) => {
+          const rank = this.getUserRank(player.points);
+          const icon = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
+          msg += `${icon} ${player.name}\n`;
+          msg += `   ${rank.name} | ${player.points} pts\n`;
+          msg += `   W/L: ${player.wins}/${player.losses}`;
+          if (player.streak > 0) msg += ` | 🔥${player.streak}`;
+          msg += `\n\n`;
+        });
+        
+        return api.sendMessage(msg, threadID, messageID);
+      }
+      
+      if (sub === "reward") {
+        const today = new Date().toDateString();
+        if (user.lastArenaReward === today) {
+          return api.sendMessage("❌ Bạn đã nhận thưởng hôm nay rồi!", threadID, messageID);
+        }
+        
+        const userRank = this.getUserRank(user.arenaPoints);
+        const reward = userRank.dailyReward;
+        
+        user.linhThach += reward.lt;
+        let expReward = reward.exp;
+        if (user.rebirthBuffs && user.rebirthBuffs.expMultiplier) {
+          expReward = Math.floor(expReward * (1 + user.rebirthBuffs.expMultiplier));
+        }
+        user.exp += expReward;
+        user.lastArenaReward = today;
+        
+        this.saveAllData(data);
+        
+        let msg = `🎁 THƯỞNG HÀNG NGÀY\n━━━━━━━━━━━━\n`;
+        msg += `🏆 Hạng: ${userRank.name}\n`;
+        msg += `✨ +${expReward} EXP\n`;
+        msg += `💎 +${reward.lt} Linh Thạch`;
+        
+        return api.sendMessage(msg, threadID, messageID);
+      }
+      
+      if (sub === "list") {
+        let msg = `📋 DANH SÁCH ĐỐI THỦ\n━━━━━━━━━━━━\n`;
+        
+        const categories = {
+          "🟢 DỄ": this.arenaOpponents.filter(op => op.difficulty === "Dễ"),
+          "🟡 TRUNG BÌNH": this.arenaOpponents.filter(op => op.difficulty === "Trung Bình"),
+          "🔴 KHÓ": this.arenaOpponents.filter(op => op.difficulty === "Khó"),
+          "⚫ CỰC KHÓ": this.arenaOpponents.filter(op => op.difficulty === "Cực Khó"),
+          "💀 ĐỊA NGỤC": this.arenaOpponents.filter(op => op.difficulty === "Địa Ngục")
+        };
+        
+        for (const [category, opponents] of Object.entries(categories)) {
+          if (opponents.length > 0) {
+            msg += `\n${category}:\n`;
+            opponents.forEach(op => {
+              msg += `• ${op.name} (${this.realms[op.realm]}) - ${op.power} power\n`;
+            });
+          }
+        }
+        
+        return api.sendMessage(msg, threadID, messageID);
+      }
+    }
+
+    // Check active buffs
+    if (cmd === "buff") {
+      let msg = `🌟 BUFF HIỆN TẠI\n━━━━━━━━━━━━\n`;
+      let hasAnyBuff = false;
+      
+      // Arena buff
+      if (user.arenaBuffExpire && Date.now() < user.arenaBuffExpire) {
+        const left = Math.ceil((user.arenaBuffExpire - Date.now()) / 60000);
+        msg += `⚔️ Arena Buff: +30% power (${left} phút)\n`;
+        hasAnyBuff = true;
+      }
+      
+      // Clan buff
+      if (user.clan && clanData[user.clan] && clanData[user.clan].buffExpire && Date.now() < clanData[user.clan].buffExpire) {
+        const left = Math.ceil((clanData[user.clan].buffExpire - Date.now()) / 60000);
+        msg += `⚡ Clan Buff: +50% EXP (${left} phút)\n`;
+        hasAnyBuff = true;
+      }
+      
+      // Rebirth buffs
+      if (user.rebirthBuffs) {
+        msg += `\n🔄 REBIRTH BUFFS (Vĩnh viễn):\n`;
+        if (user.rebirthBuffs.expMultiplier > 0) {
+          msg += `✨ +${(user.rebirthBuffs.expMultiplier * 100).toFixed(0)}% EXP\n`;
+          hasAnyBuff = true;
+        }
+        if (user.rebirthBuffs.dokiepBonus > 0) {
+          msg += `🌟 +${(user.rebirthBuffs.dokiepBonus * 100).toFixed(0)}% độ kiếp\n`;
+          hasAnyBuff = true;
+        }
+        if (user.rebirthBuffs.pvpBonus > 0) {
+          msg += `⚔️ +${(user.rebirthBuffs.pvpBonus * 100).toFixed(0)}% PvP power\n`;
+          hasAnyBuff = true;
+        }
+        if (user.rebirthBuffs.bossBonus > 0) {
+          msg += `🐲 +${(user.rebirthBuffs.bossBonus * 100).toFixed(0)}% Boss damage\n`;
+          hasAnyBuff = true;
+        }
+        if (user.rebirthBuffs.trainBonus > 0) {
+          msg += `🧘 +${(user.rebirthBuffs.trainBonus * 100).toFixed(0)}% train EXP\n`;
+          hasAnyBuff = true;
+        }
+      }
+      
+      if (!hasAnyBuff) {
+        msg += `❌ Không có buff nào đang hoạt động`;
       }
       
       return api.sendMessage(msg, threadID, messageID);
