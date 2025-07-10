@@ -463,6 +463,135 @@ if (cmd === "inv") {
       return api.sendMessage(msg, threadID, messageID);
     }
 
+    // CLAN COMMAND
+    if (cmd === "clan") {
+      // Khởi tạo object clan nếu chưa có
+      if (!data._clans) data._clans = {};
+      const sub = (args[1] || "").toLowerCase();
+      // Tạo clan
+      if (sub === "create") {
+        const clanName = args.slice(2).join(" ").trim();
+        if (!clanName) return api.sendMessage("🏯 Dùng: clan create <tên>", threadID, messageID);
+        if (user.clan) return api.sendMessage("❌ Bạn đã có clan.", threadID, messageID);
+        if (data._clans[clanName]) return api.sendMessage("❌ Tên clan đã tồn tại.", threadID, messageID);
+        data._clans[clanName] = {
+          name: clanName,
+          owner: senderID,
+          members: [senderID],
+          createdAt: Date.now(),
+          notice: "Chào mừng đến với clan!"
+        };
+        user.clan = clanName;
+        user.clanRole = "Chủ Clan";
+        this.saveAllData(data);
+        return api.sendMessage(`🏯 Đã tạo clan '${clanName}'!`, threadID, messageID);
+      }
+      // Xin vào clan
+      if (sub === "join") {
+        const clanName = args.slice(2).join(" ").trim();
+        if (!clanName) return api.sendMessage("🏯 Dùng: clan join <tên>", threadID, messageID);
+        if (user.clan) return api.sendMessage("❌ Bạn đã có clan.", threadID, messageID);
+        const clan = data._clans[clanName];
+        if (!clan) return api.sendMessage("❌ Clan không tồn tại.", threadID, messageID);
+        if (clan.members.includes(senderID)) return api.sendMessage("❌ Bạn đã ở trong clan này.", threadID, messageID);
+        clan.members.push(senderID);
+        user.clan = clanName;
+        user.clanRole = "Thành viên";
+        this.saveAllData(data);
+        return api.sendMessage(`✅ Đã gia nhập clan '${clanName}'!`, threadID, messageID);
+      }
+      // Rời clan
+      if (sub === "leave") {
+        if (!user.clan) return api.sendMessage("❌ Bạn chưa ở clan nào.", threadID, messageID);
+        const clan = data._clans[user.clan];
+        if (!clan) {
+          user.clan = null;
+          user.clanRole = null;
+          this.saveAllData(data);
+          return api.sendMessage("❌ Clan không tồn tại, đã xóa liên kết.", threadID, messageID);
+        }
+        if (clan.owner === senderID) {
+          // Chủ clan rời: giải tán clan
+          clan.members.forEach(uid => {
+            if (data[uid]) {
+              data[uid].clan = null;
+              data[uid].clanRole = null;
+            }
+          });
+          delete data._clans[user.clan];
+          this.saveAllData(data);
+          return api.sendMessage("🏯 Bạn đã giải tán clan.", threadID, messageID);
+        } else {
+          // Thành viên rời
+          clan.members = clan.members.filter(uid => uid !== senderID);
+          user.clan = null;
+          user.clanRole = null;
+          this.saveAllData(data);
+          return api.sendMessage("🏯 Đã rời clan.", threadID, messageID);
+        }
+      }
+      // Xem thông tin clan
+      if (sub === "info") {
+        let clanName = args[2] ? args.slice(2).join(" ") : user.clan;
+        if (!clanName) return api.sendMessage("❌ Dùng: clan info <tên> hoặc khi đã có clan thì không cần tên.", threadID, messageID);
+        const clan = data._clans[clanName];
+        if (!clan) return api.sendMessage("❌ Clan không tồn tại.", threadID, messageID);
+        let msg = `🏯 Clan: ${clan.name}\n👑 Chủ clan: ${(data[clan.owner]?.name) || clan.owner}\n👥 Thành viên: ${clan.members.length}\n📅 Ngày tạo: ${new Date(clan.createdAt).toLocaleString()}\n📢 Thông báo: ${clan.notice}`;
+        return api.sendMessage(msg, threadID, messageID);
+      }
+      // Xem thành viên clan
+      if (sub === "members") {
+        let clanName = args[2] ? args.slice(2).join(" ") : user.clan;
+        if (!clanName) return api.sendMessage("❌ Dùng: clan members <tên> hoặc khi đã có clan thì không cần tên.", threadID, messageID);
+        const clan = data._clans[clanName];
+        if (!clan) return api.sendMessage("❌ Clan không tồn tại.", threadID, messageID);
+        let msg = `👥 Thành viên clan '${clan.name}':\n`;
+        clan.members.forEach((uid, i) => {
+          msg += `${i + 1}. ${(data[uid]?.name) || uid}${uid === clan.owner ? " (Chủ)" : ""}\n`;
+        });
+        return api.sendMessage(msg.trim(), threadID, messageID);
+      }
+      // Đổi thông báo clan (chỉ chủ clan)
+      if (sub === "notice") {
+        if (!user.clan) return api.sendMessage("❌ Bạn chưa ở clan nào.", threadID, messageID);
+        const clan = data._clans[user.clan];
+        if (!clan) return api.sendMessage("❌ Clan không tồn tại.", threadID, messageID);
+        if (clan.owner !== senderID) return api.sendMessage("❌ Chỉ chủ clan mới đổi thông báo.", threadID, messageID);
+        const notice = args.slice(2).join(" ").trim();
+        if (!notice) return api.sendMessage("📢 Dùng: clan notice <nội dung>", threadID, messageID);
+        clan.notice = notice;
+        this.saveAllData(data);
+        return api.sendMessage("📢 Đã cập nhật thông báo clan!", threadID, messageID);
+      }
+      // Đuổi thành viên (chỉ chủ clan)
+      if (sub === "kick") {
+        if (!user.clan) return api.sendMessage("❌ Bạn chưa ở clan nào.", threadID, messageID);
+        const clan = data._clans[user.clan];
+        if (!clan) return api.sendMessage("❌ Clan không tồn tại.", threadID, messageID);
+        if (clan.owner !== senderID) return api.sendMessage("❌ Chỉ chủ clan mới có quyền.", threadID, messageID);
+        const mentionIDs = Object.keys(event.mentions || {});
+        if (!mentionIDs.length) return api.sendMessage("🏯 Dùng: clan kick <@tag>", threadID, messageID);
+        let kicked = [];
+        mentionIDs.forEach(uid => {
+          if (uid === senderID) return;
+          if (clan.members.includes(uid)) {
+            clan.members = clan.members.filter(id => id !== uid);
+            if (data[uid]) {
+              data[uid].clan = null;
+              data[uid].clanRole = null;
+            }
+            kicked.push(data[uid]?.name || uid);
+          }
+        });
+        this.saveAllData(data);
+        if (kicked.length) return api.sendMessage(`✅ Đã đuổi: ${kicked.join(", ")}`, threadID, messageID);
+        else return api.sendMessage("❌ Không tìm thấy thành viên hợp lệ để đuổi.", threadID, messageID);
+      }
+      // Hướng dẫn
+      let msg = `🏯 Lệnh clan:\n- clan create <tên>: Tạo clan\n- clan join <tên>: Vào clan\n- clan leave: Rời clan\n- clan info [tên]: Xem thông tin\n- clan members [tên]: Xem thành viên\n- clan notice <nội dung>: Đổi thông báo (chủ clan)\n- clan kick <@tag>: Đuổi thành viên (chủ clan)`;
+      return api.sendMessage(msg, threadID, messageID);
+    }
+
     return api.sendMessage("❓ Lệnh không hợp lệ. Gõ `.tutien` để xem menu.", threadID, messageID);
   }
 static getAllData() {
