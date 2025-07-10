@@ -18,6 +18,8 @@ module.exports = class {
   static realms = ["Luyện Khí", "Trúc Cơ", "Kim Đan", "Nguyên Anh", "Hóa Thần", "Luyện Hư", "Độ Kiếp", "Đại Thừa", "Phi Thăng"];
   static dataPath = path.join(__dirname, "..", "..", "system", "data", "tutien.json");
   static bossPath = path.join(__dirname, "..", "..", "system", "data", "boss.json");
+  // Đường dẫn file dữ liệu clan
+  static clanPath = path.join(__dirname, "..", "..", "system", "data", "clan.json");
 
   static factions = {
     tien: "🧘 Tu Tiên",
@@ -106,6 +108,25 @@ module.exports = class {
     }
   }
 
+  // ===== CLAN DATA HELPERS ===== //
+  static getAllClanData() {
+    try {
+      if (!fs.existsSync(this.clanPath)) return {};
+      return JSON.parse(fs.readFileSync(this.clanPath));
+    } catch (e) {
+      console.error("[tutien] Lỗi đọc clan:", e);
+      return {};
+    }
+  }
+
+  static saveAllClanData(data) {
+    try {
+      fs.writeFileSync(this.clanPath, JSON.stringify(data, null, 2));
+    } catch (e) {
+      console.error("[tutien] Lỗi lưu clan:", e);
+    }
+  }
+
   static async onLoad() {
     const dir = path.dirname(this.dataPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -114,6 +135,9 @@ module.exports = class {
       const boss = this.createNewBoss();
       this.saveBossData(boss);
     }
+
+    // Tạo file clan.json nếu chưa có
+    if (!fs.existsSync(this.clanPath)) fs.writeFileSync(this.clanPath, "{}");
   }
 static async onRun({ api, event, args }) {
     const { threadID, senderID, messageID } = event;
@@ -244,6 +268,137 @@ static async onRun({ api, event, args }) {
       user.faction = pick;
       this.saveAllData(data);
       return api.sendMessage(`☯️ Bạn đã gia nhập ${this.factions[pick]}`, threadID, messageID);
+    }
+
+    // ========== CLAN COMMAND ==========
+    if (cmd === "clan") {
+      const clans = this.getAllClanData();
+      const sub = args[1]?.toLowerCase();
+
+      // Hiển thị trợ giúp
+      if (!sub) {
+        const helpMsg =
+          "🏯 Clan Commands:\n" +
+          "- clan create <tên>: tạo clan (tốn 5 LT)\n" +
+          "- clan join <tên>: tham gia clan\n" +
+          "- clan leave: rời clan\n" +
+          "- clan info [tên]: xem thông tin clan\n" +
+          "- clantop: bảng xếp hạng clan";
+        return api.sendMessage(helpMsg, threadID, messageID);
+      }
+
+      // ===== CREATE =====
+      if (sub === "create") {
+        if (user.clan)
+          return api.sendMessage("❌ Bạn đã có clan rồi!", threadID, messageID);
+        const name = args.slice(2).join(" ");
+        if (!name)
+          return api.sendMessage("❌ Dùng: clan create <tên>", threadID, messageID);
+        if (clans[name])
+          return api.sendMessage("❌ Clan này đã tồn tại!", threadID, messageID);
+        if (user.linhThach < 5)
+          return api.sendMessage("❌ Cần 5 LT để tạo clan!", threadID, messageID);
+
+        // Khởi tạo clan
+        clans[name] = {
+          leader: senderID,
+          members: [senderID]
+        };
+        user.linhThach -= 5;
+        user.clan = name;
+        user.clanRole = "Leader";
+        this.saveAllClanData(clans);
+        this.saveAllData(data);
+        return api.sendMessage(`✅ Tạo clan ${name} thành công!`, threadID, messageID);
+      }
+
+      // ===== JOIN =====
+      if (sub === "join") {
+        if (user.clan) return api.sendMessage("❌ Bạn đã ở trong clan!", threadID, messageID);
+        const name = args.slice(2).join(" ");
+        if (!name || !clans[name])
+          return api.sendMessage("❌ Clan không tồn tại!", threadID, messageID);
+        if (clans[name].members.length >= 20)
+          return api.sendMessage("❌ Clan đã đầy!", threadID, messageID);
+
+        clans[name].members.push(senderID);
+        user.clan = name;
+        user.clanRole = "Member";
+        this.saveAllClanData(clans);
+        this.saveAllData(data);
+        return api.sendMessage(`✅ Đã tham gia clan ${name}!`, threadID, messageID);
+      }
+
+      // ===== LEAVE =====
+      if (sub === "leave") {
+        if (!user.clan) return api.sendMessage("❌ Bạn chưa ở clan nào!", threadID, messageID);
+        const name = user.clan;
+        const clan = clans[name];
+        if (!clan) {
+          // dữ liệu lệch, reset
+          user.clan = null;
+          user.clanRole = null;
+          this.saveAllData(data);
+          return api.sendMessage("⚠️ Dữ liệu clan lỗi, đã reset!", threadID, messageID);
+        }
+        // Nếu là leader và còn thành viên khác
+        if (clan.leader === senderID && clan.members.length > 1) {
+          return api.sendMessage("❌ Bạn là leader, hãy chuyển quyền hoặc giải tán clan!", threadID, messageID);
+        }
+        // Xóa thành viên
+        clan.members = clan.members.filter((id) => id !== senderID);
+        if (clan.members.length === 0) {
+          delete clans[name];
+        } else if (clan.leader === senderID) {
+          clan.leader = clan.members[0]; // chuyển leader cho thành viên đầu tiên
+        }
+        user.clan = null;
+        user.clanRole = null;
+        this.saveAllClanData(clans);
+        this.saveAllData(data);
+        return api.sendMessage("✅ Đã rời clan!", threadID, messageID);
+      }
+
+      // ===== INFO =====
+      if (sub === "info") {
+        let name = args.slice(2).join(" ");
+        if (!name) name = user.clan;
+        if (!name || !clans[name])
+          return api.sendMessage("❌ Clan không tồn tại hoặc bạn chưa có clan!", threadID, messageID);
+        const clan = clans[name];
+        const memberNames = clan.members
+          .map((uid, idx) => {
+            const u = data[uid];
+            const disp = u?.hideInfo ? "Ẩn danh" : u?.name || `UID ${uid}`;
+            return `${idx + 1}. ${disp}`;
+          })
+          .join("\n");
+        // Tính tổng EXP clan
+        const totalExp = clan.members.reduce((sum, uid) => sum + (data[uid]?.exp || 0), 0);
+        const infoMsg = `🏯 Clan: ${name}\n👑 Leader: ${data[clan.leader]?.name || clan.leader}\n👥 Số thành viên: ${clan.members.length}\n✨ Tổng EXP: ${totalExp}\n\nDanh sách:\n${memberNames}`;
+        return api.sendMessage(infoMsg, threadID, messageID);
+      }
+
+      // Subcommand không hợp lệ
+      return api.sendMessage("❓ Subcommand không hợp lệ!", threadID, messageID);
+    }
+
+    // ========== CLAN TOP ==========
+    if (cmd === "clantop") {
+      const clans = this.getAllClanData();
+      const ranking = Object.entries(clans)
+        .map(([name, clanObj]) => {
+          const totalExp = clanObj.members.reduce((sum, uid) => sum + (data[uid]?.exp || 0), 0);
+          return { name, totalExp };
+        })
+        .sort((a, b) => b.totalExp - a.totalExp)
+        .slice(0, 5);
+      if (!ranking.length) return api.sendMessage("🏯 Chưa có clan nào!", threadID, messageID);
+      let msg = "🏆 TOP CLAN:\n";
+      ranking.forEach((c, i) => {
+        msg += `${i + 1}. ${c.name} – EXP: ${c.totalExp}\n`;
+      });
+      return api.sendMessage(msg.trim(), threadID, messageID);
     }
 
     if (cmd === "shop") {
