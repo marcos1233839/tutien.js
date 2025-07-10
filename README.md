@@ -115,7 +115,8 @@ module.exports = class {
       this.saveBossData(boss);
     }
   }
-static async onRun({ api, event, args }) {
+
+  static async onRun({ api, event, args }) {
     const { threadID, senderID, messageID } = event;
     const data = this.getAllData();
     const fbName = (await api.getUserInfo(senderID))[senderID].name;
@@ -593,72 +594,6 @@ if (cmd === "inv") {
     }
 
     return api.sendMessage("❓ Lệnh không hợp lệ. Gõ `.tutien` để xem menu.", threadID, messageID);
-  }
-static getAllData() {
-    try {
-      if (!fs.existsSync(this.dataPath)) return {};
-      return JSON.parse(fs.readFileSync(this.dataPath));
-    } catch (e) {
-      console.error("[tutien] Lỗi đọc data:", e);
-      return {};
-    }
-  }
-
-  static saveAllData(data) {
-    try {
-      fs.writeFileSync(this.dataPath, JSON.stringify(data, null, 2));
-    } catch (e) {
-      console.error("[tutien] Lỗi lưu data:", e);
-    }
-  }
-
-  static getBossData() {
-    try {
-      if (!fs.existsSync(this.bossPath)) {
-        const boss = this.createNewBoss();
-        this.saveBossData(boss);
-        return boss;
-      }
-      let boss = JSON.parse(fs.readFileSync(this.bossPath));
-      const now = Date.now();
-      if (boss.defeated && now - boss.defeatTime >= 86400000) {
-        boss = this.createNewBoss();
-        this.saveBossData(boss);
-      }
-      return boss;
-    } catch (e) {
-      console.error("[tutien] Lỗi đọc boss:", e);
-      return null;
-    }
-  }
-
-  static createNewBoss() {
-    const pick = this.bossList[Math.floor(Math.random() * this.bossList.length)];
-    return {
-      name: pick.name,
-      hp: pick.hp,
-      damage: {},
-      defeated: false,
-      defeatTime: 0
-    };
-  }
-
-  static saveBossData(data) {
-    try {
-      fs.writeFileSync(this.bossPath, JSON.stringify(data, null, 2));
-    } catch (e) {
-      console.error("[tutien] Lỗi lưu boss:", e);
-    }
-  }
-
-  static async onLoad() {
-    const dir = path.dirname(this.dataPath);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    if (!fs.existsSync(this.dataPath)) fs.writeFileSync(this.dataPath, "{}");
-    if (!fs.existsSync(this.bossPath)) {
-      const boss = this.createNewBoss();
-      this.saveBossData(boss);
-    }
   }
 
   static async onEvent({ event }) {
