@@ -18,12 +18,27 @@ module.exports = class {
   static realms = ["Luyện Khí", "Trúc Cơ", "Kim Đan", "Nguyên Anh", "Hóa Thần", "Luyện Hư", "Độ Kiếp", "Đại Thừa", "Phi Thăng"];
   static dataPath = path.join(__dirname, "..", "..", "system", "data", "tutien.json");
   static bossPath = path.join(__dirname, "..", "..", "system", "data", "boss.json");
+  static clanPath = path.join(__dirname, "..", "..", "system", "data", "clans.json");
 
   static factions = {
     tien: "🧘 Tu Tiên",
     ma: "😈 Tu Ma",
     phat: "🪷 Tu Phật",
     hachan: "❄️ Hắc Hàn"
+  };
+
+  static clanRoles = {
+    member: { name: "🔷 Thành Viên", level: 0, expBonus: 0.05 },
+    elder: { name: "🔶 Trưởng Lão", level: 1, expBonus: 0.10 },
+    vice: { name: "🔸 Phó Bang Chủ", level: 2, expBonus: 0.15 },
+    leader: { name: "👑 Bang Chủ", level: 3, expBonus: 0.20 }
+  };
+
+  static clanBuildings = {
+    training: { name: "💪 Võ Đường", maxLevel: 5, baseCost: 50 },
+    library: { name: "📚 Thư Viện", maxLevel: 5, baseCost: 60 },
+    treasury: { name: "💰 Kho Bạc", maxLevel: 5, baseCost: 70 },
+    altar: { name: "⚡ Pháp Đàn", maxLevel: 5, baseCost: 80 }
   };
 
   static items = {
