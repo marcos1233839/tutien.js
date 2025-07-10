@@ -202,7 +202,7 @@ module.exports = class {
       const msg = `📜 𝗧𝗨 𝗧𝗜Ê𝗡 𝗠𝗘𝗡𝗨 𝗩𝟳.𝟬\n━━━━━━━━━━━━━━━━\n` +
         `🌱 Tu luyện: train | dokiep | quest | dungeon | info\n` +
         `🎮 Khác: pvp <@tag> | boss | phai | artifact | event\n` +
-        `🏯 Bang hội: clan | cjoin | cleave | cinfo | cupgrade\n` +
+        `🏯 Bang hội: clan | clan create/join/leave/disband | clantop\n` +
         `🛍️ Vật phẩm: shop | buy <mã> | use <mã> | inv\n` +
         `⚙️ Hệ thống: top | clantop | hide | pet | rebirth`;
       return api.sendMessage(msg, threadID, messageID);
@@ -364,7 +364,9 @@ module.exports = class {
           return api.sendMessage(`🏯 𝗖𝗟𝗔𝗡 𝗦𝗬𝗦𝗧𝗘𝗠\n━━━━━━━━━━━━\n` +
             `📝 Tạo clan: clan create <tên>\n` +
             `🚪 Vào clan: clan join <tên>\n` +
-            `📋 Danh sách: clan list\n` +
+            `� Rời clan: clan leave\n` +
+            `💥 Giải tán: clan disband (Leader only)\n` +
+            `�� Danh sách: clan list\n` +
             `🔍 Tìm kiếm: clan search <tên>`, threadID, messageID);
         } else {
           const clan = clanData[user.clan];
@@ -445,7 +447,7 @@ module.exports = class {
         if (!user.clan) return api.sendMessage("❌ Bạn không ở trong clan nào!", threadID, messageID);
         
         if (user.clanRole === "leader") {
-          return api.sendMessage("❌ Bang chủ không thể rời clan! Hãy chuyển quyền hoặc giải tán clan.", threadID, messageID);
+          return api.sendMessage("❌ Bang chủ không thể rời clan! Hãy chuyển quyền hoặc dùng `clan disband` để giải tán.", threadID, messageID);
         }
         
         const oldClan = user.clan;
@@ -455,6 +457,31 @@ module.exports = class {
         
         this.saveAllData(data);
         return api.sendMessage(`🚪 Đã rời clan "${oldClan}".`, threadID, messageID);
+      }
+
+      if (sub === "disband") {
+        if (!user.clan) return api.sendMessage("❌ Bạn không ở trong clan nào!", threadID, messageID);
+        if (user.clanRole !== "leader") return api.sendMessage("❌ Chỉ Bang Chủ mới có thể giải tán clan!", threadID, messageID);
+        
+        const clanName = user.clan;
+        const clan = clanData[clanName];
+        
+        // Xóa clan khỏi tất cả thành viên
+        Object.values(data).forEach(member => {
+          if (member.clan === clanName) {
+            member.clan = null;
+            member.clanRole = "member";
+            member.clanContribution = 0;
+          }
+        });
+        
+        // Xóa clan khỏi database
+        delete clanData[clanName];
+        
+        this.saveAllData(data);
+        this.saveClanData(clanData);
+        
+        return api.sendMessage(`💥 Clan "${clanName}" đã bị giải tán!\n👥 Tất cả thành viên đã được giải phóng.`, threadID, messageID);
       }
       
       if (sub === "list") {
