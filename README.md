@@ -133,6 +133,8 @@ static async onRun({ api, event, args }) {
         pvpCooldown: 0,
         clan: null,
         clanRole: null,
+        clanJoinDate: null,
+        clanContribution: 0,
         dokiepCount: 0,
         pvpWins: 0,
         trainCount: 0,
@@ -159,7 +161,16 @@ static async onRun({ api, event, args }) {
 
     if (cmd === "train") {
       const now = Date.now();
-      const cd = 180000;
+      let cd = 180000;
+      
+      // Clan buff giảm cooldown
+      if (user.clan) {
+        const allUsers = Object.values(data);
+        const clanMembers = allUsers.filter(u => u.clan === user.clan);
+        const totalContribution = clanMembers.reduce((sum, u) => sum + (u.clanContribution || 0), 0);
+        if (totalContribution >= 500) cd = Math.floor(cd * 0.5);
+      }
+      
       if (now - user.lastTrain < cd) {
         const left = Math.ceil((cd - (now - user.lastTrain)) / 1000);
         return api.sendMessage(`⏱️ Còn ${left}s mới có thể train tiếp.`, threadID, messageID);
@@ -167,6 +178,15 @@ static async onRun({ api, event, args }) {
 
       let exp = Math.floor(Math.random() * 201) + 100;
       if (user.faction === "hachan" && user.theChat > 100) exp += 50;
+      
+      // Clan buff EXP
+      if (user.clan) {
+        const allUsers = Object.values(data);
+        const clanMembers = allUsers.filter(u => u.clan === user.clan);
+        const totalContribution = clanMembers.reduce((sum, u) => sum + (u.clanContribution || 0), 0);
+        if (totalContribution >= 100) exp = Math.floor(exp * 1.1);
+      }
+      
       user.exp += exp;
       user.trainCount++;
       user.linhThach += Math.random() < 0.3 ? 1 : 0;
@@ -192,6 +212,14 @@ static async onRun({ api, event, args }) {
       if (user.items.ngoc) {
         user.items.ngoc--;
         rate += 0.2;
+      }
+      
+      // Clan buff tỉ lệ độ kiếp
+      if (user.clan) {
+        const allUsers = Object.values(data);
+        const clanMembers = allUsers.filter(u => u.clan === user.clan);
+        const totalContribution = clanMembers.reduce((sum, u) => sum + (u.clanContribution || 0), 0);
+        if (totalContribution >= 200) rate += 0.15;
       }
 
       const roll = Math.random();
@@ -429,12 +457,377 @@ if (cmd === "inv") {
       return api.sendMessage(user.hideInfo ? "🔒 Đã bật ẩn thông tin." : "🔓 Đã tắt ẩn thông tin.", threadID, messageID);
     }
 
+    if (cmd === "clan") {
+      const subCmd = args[1]?.toLowerCase();
+      
+      if (!subCmd) {
+        const msg = `🏯 𝗖𝗟𝗔𝗡 𝗠𝗘𝗡𝗨\n━━━━━━━━━━━━\n` +
+          `📝 Tạo clan: clan create <tên>\n` +
+          `🚪 Vào clan: clan join <tên>\n` +
+          `🚶 Rời clan: clan leave\n` +
+          `📋 Thông tin: clan info [tên]\n` +
+          `👥 Thành viên: clan members\n` +
+          `👑 Quản lý: clan invite <@tag> | kick <@tag>\n` +
+          `⬆️ Thăng chức: clan promote <@tag>\n` +
+          `⬇️ Giáng chức: clan demote <@tag>\n` +
+          `💰 Đóng góp: clan donate <số_LT>\n` +
+          `🏆 Bảng xếp hạng: clan top\n` +
+          `⚔️ Chiến tranh: clan war <tên_clan>\n` +
+          `🎁 Phúc lợi: clan buff`;
+        return api.sendMessage(msg, threadID, messageID);
+      }
+
+      // Tạo clan
+      if (subCmd === "create") {
+        if (user.clan) return api.sendMessage("❌ Bạn đã có clan rồi!", threadID, messageID);
+        
+        const clanName = args.slice(2).join(" ");
+        if (!clanName) return api.sendMessage("❌ Vui lòng nhập tên clan!", threadID, messageID);
+        if (clanName.length > 20) return api.sendMessage("❌ Tên clan không được quá 20 ký tự!", threadID, messageID);
+        if (user.linhThach < 50) return api.sendMessage("❌ Cần 50 Linh Thạch để tạo clan!", threadID, messageID);
+        
+        // Kiểm tra tên clan đã tồn tại
+        const allUsers = Object.values(data);
+        const existingClan = allUsers.find(u => u.clan === clanName);
+        if (existingClan) return api.sendMessage("❌ Tên clan đã tồn tại!", threadID, messageID);
+        
+        user.linhThach -= 50;
+        user.clan = clanName;
+        user.clanRole = "Leader";
+        user.clanJoinDate = Date.now();
+        user.clanContribution = 0;
+        
+        this.saveAllData(data);
+        return api.sendMessage(`🏯 Đã tạo clan "${clanName}" thành công!\n👑 Bạn là clan leader.`, threadID, messageID);
+      }
+
+      // Vào clan
+      if (subCmd === "join") {
+        if (user.clan) return api.sendMessage("❌ Bạn đã có clan rồi! Dùng `clan leave` để rời clan hiện tại.", threadID, messageID);
+        
+        const clanName = args.slice(2).join(" ");
+        if (!clanName) return api.sendMessage("❌ Vui lòng nhập tên clan!", threadID, messageID);
+        
+        // Tìm clan
+        const allUsers = Object.values(data);
+        const clanExists = allUsers.find(u => u.clan === clanName);
+        if (!clanExists) return api.sendMessage("❌ Clan không tồn tại!", threadID, messageID);
+        
+        // Kiểm tra số lượng thành viên
+        const clanMembers = allUsers.filter(u => u.clan === clanName);
+        if (clanMembers.length >= 20) return api.sendMessage("❌ Clan đã đầy (tối đa 20 thành viên)!", threadID, messageID);
+        
+        user.clan = clanName;
+        user.clanRole = "Member";
+        user.clanJoinDate = Date.now();
+        user.clanContribution = 0;
+        
+        this.saveAllData(data);
+        return api.sendMessage(`🏯 Đã gia nhập clan "${clanName}" thành công!`, threadID, messageID);
+      }
+
+      // Rời clan
+      if (subCmd === "leave") {
+        if (!user.clan) return api.sendMessage("❌ Bạn chưa có clan!", threadID, messageID);
+        
+        const oldClan = user.clan;
+        user.clan = null;
+        user.clanRole = null;
+        user.clanJoinDate = null;
+        user.clanContribution = 0;
+        
+        this.saveAllData(data);
+        return api.sendMessage(`🚪 Đã rời clan "${oldClan}".`, threadID, messageID);
+      }
+
+      // Thông tin clan
+      if (subCmd === "info") {
+        const targetClan = args.slice(2).join(" ") || user.clan;
+        if (!targetClan) return api.sendMessage("❌ Bạn chưa có clan hoặc chưa nhập tên clan!", threadID, messageID);
+        
+        const allUsers = Object.values(data);
+        const clanMembers = allUsers.filter(u => u.clan === targetClan);
+        if (clanMembers.length === 0) return api.sendMessage("❌ Clan không tồn tại!", threadID, messageID);
+        
+        const leader = clanMembers.find(u => u.clanRole === "Leader");
+        const elders = clanMembers.filter(u => u.clanRole === "Elder");
+        const totalContribution = clanMembers.reduce((sum, u) => sum + (u.clanContribution || 0), 0);
+        const avgLevel = clanMembers.reduce((sum, u) => sum + this.realms.indexOf(u.realm), 0) / clanMembers.length;
+        
+        let msg = `🏯 Thông tin clan: ${targetClan}\n`;
+        msg += `👑 Leader: ${leader ? leader.name : "Không có"}\n`;
+        msg += `👥 Thành viên: ${clanMembers.length}/20\n`;
+        msg += `👴 Elder: ${elders.length}\n`;
+        msg += `💰 Tổng đóng góp: ${totalContribution} LT\n`;
+        msg += `⭐ Cấp độ trung bình: ${this.realms[Math.floor(avgLevel)] || "Luyện Khí"}\n`;
+        msg += `📅 Hoạt động: ${clanMembers.filter(u => Date.now() - (u.lastTrain || 0) < 86400000).length} người online 24h`;
+        
+        return api.sendMessage(msg, threadID, messageID);
+      }
+
+      // Danh sách thành viên
+      if (subCmd === "members") {
+        if (!user.clan) return api.sendMessage("❌ Bạn chưa có clan!", threadID, messageID);
+        
+        const allUsers = Object.values(data);
+        const clanMembers = allUsers.filter(u => u.clan === user.clan);
+        
+        let msg = `👥 Thành viên clan ${user.clan}:\n`;
+        const sorted = clanMembers.sort((a, b) => {
+          const roleOrder = { "Leader": 3, "Elder": 2, "Member": 1 };
+          return (roleOrder[b.clanRole] || 0) - (roleOrder[a.clanRole] || 0);
+        });
+        
+        sorted.forEach((member, i) => {
+          const roleIcon = member.clanRole === "Leader" ? "👑" : member.clanRole === "Elder" ? "👴" : "👤";
+          const onlineStatus = Date.now() - (member.lastTrain || 0) < 86400000 ? "🟢" : "🔴";
+          msg += `${i + 1}. ${roleIcon} ${member.name} (${member.realm}) ${onlineStatus}\n`;
+        });
+        
+        return api.sendMessage(msg, threadID, messageID);
+      }
+
+      // Mời vào clan
+      if (subCmd === "invite") {
+        if (!user.clan) return api.sendMessage("❌ Bạn chưa có clan!", threadID, messageID);
+        if (!["Leader", "Elder"].includes(user.clanRole)) return api.sendMessage("❌ Chỉ Leader và Elder mới có thể mời người!", threadID, messageID);
+        
+        const targetID = Object.keys(event.mentions)[0];
+        if (!targetID) return api.sendMessage("❌ Vui lòng tag người cần mời!", threadID, messageID);
+        if (!data[targetID]) return api.sendMessage("❌ Người này chưa tu tiên!", threadID, messageID);
+        if (data[targetID].clan) return api.sendMessage("❌ Người này đã có clan rồi!", threadID, messageID);
+        
+        const allUsers = Object.values(data);
+        const clanMembers = allUsers.filter(u => u.clan === user.clan);
+        if (clanMembers.length >= 20) return api.sendMessage("❌ Clan đã đầy!", threadID, messageID);
+        
+        data[targetID].clan = user.clan;
+        data[targetID].clanRole = "Member";
+        data[targetID].clanJoinDate = Date.now();
+        data[targetID].clanContribution = 0;
+        
+        this.saveAllData(data);
+        return api.sendMessage(`✅ Đã mời ${data[targetID].name} vào clan ${user.clan}!`, threadID, messageID);
+      }
+
+      // Kick thành viên
+      if (subCmd === "kick") {
+        if (!user.clan) return api.sendMessage("❌ Bạn chưa có clan!", threadID, messageID);
+        if (user.clanRole !== "Leader") return api.sendMessage("❌ Chỉ Leader mới có thể kick thành viên!", threadID, messageID);
+        
+        const targetID = Object.keys(event.mentions)[0];
+        if (!targetID) return api.sendMessage("❌ Vui lòng tag người cần kick!", threadID, messageID);
+        if (!data[targetID] || data[targetID].clan !== user.clan) return api.sendMessage("❌ Người này không trong clan!", threadID, messageID);
+        if (data[targetID].clanRole === "Leader") return api.sendMessage("❌ Không thể kick Leader!", threadID, messageID);
+        
+        const targetName = data[targetID].name;
+        data[targetID].clan = null;
+        data[targetID].clanRole = null;
+        data[targetID].clanJoinDate = null;
+        data[targetID].clanContribution = 0;
+        
+        this.saveAllData(data);
+        return api.sendMessage(`⚡ Đã kick ${targetName} khỏi clan!`, threadID, messageID);
+      }
+
+      // Thăng chức
+      if (subCmd === "promote") {
+        if (!user.clan) return api.sendMessage("❌ Bạn chưa có clan!", threadID, messageID);
+        if (user.clanRole !== "Leader") return api.sendMessage("❌ Chỉ Leader mới có thể thăng chức!", threadID, messageID);
+        
+        const targetID = Object.keys(event.mentions)[0];
+        if (!targetID) return api.sendMessage("❌ Vui lòng tag người cần thăng chức!", threadID, messageID);
+        if (!data[targetID] || data[targetID].clan !== user.clan) return api.sendMessage("❌ Người này không trong clan!", threadID, messageID);
+        if (data[targetID].clanRole === "Leader") return api.sendMessage("❌ Người này đã là Leader!", threadID, messageID);
+        
+        const allUsers = Object.values(data);
+        const elders = allUsers.filter(u => u.clan === user.clan && u.clanRole === "Elder");
+        if (data[targetID].clanRole === "Member" && elders.length >= 3) {
+          return api.sendMessage("❌ Clan chỉ có thể có tối đa 3 Elder!", threadID, messageID);
+        }
+        
+        data[targetID].clanRole = data[targetID].clanRole === "Member" ? "Elder" : "Leader";
+        if (data[targetID].clanRole === "Leader") {
+          user.clanRole = "Elder";
+        }
+        
+        this.saveAllData(data);
+        return api.sendMessage(`⬆️ Đã thăng chức ${data[targetID].name} lên ${data[targetID].clanRole}!`, threadID, messageID);
+      }
+
+      // Giáng chức
+      if (subCmd === "demote") {
+        if (!user.clan) return api.sendMessage("❌ Bạn chưa có clan!", threadID, messageID);
+        if (user.clanRole !== "Leader") return api.sendMessage("❌ Chỉ Leader mới có thể giáng chức!", threadID, messageID);
+        
+        const targetID = Object.keys(event.mentions)[0];
+        if (!targetID) return api.sendMessage("❌ Vui lòng tag người cần giáng chức!", threadID, messageID);
+        if (!data[targetID] || data[targetID].clan !== user.clan) return api.sendMessage("❌ Người này không trong clan!", threadID, messageID);
+        if (data[targetID].clanRole === "Member") return api.sendMessage("❌ Người này đã là Member rồi!", threadID, messageID);
+        
+        data[targetID].clanRole = "Member";
+        this.saveAllData(data);
+        return api.sendMessage(`⬇️ Đã giáng chức ${data[targetID].name} xuống Member!`, threadID, messageID);
+      }
+
+      // Đóng góp
+      if (subCmd === "donate") {
+        if (!user.clan) return api.sendMessage("❌ Bạn chưa có clan!", threadID, messageID);
+        
+        const amount = parseInt(args[2]);
+        if (!amount || amount <= 0) return api.sendMessage("❌ Số lượng không hợp lệ!", threadID, messageID);
+        if (user.linhThach < amount) return api.sendMessage("❌ Không đủ Linh Thạch!", threadID, messageID);
+        
+        user.linhThach -= amount;
+        user.clanContribution = (user.clanContribution || 0) + amount;
+        
+        this.saveAllData(data);
+        return api.sendMessage(`💰 Đã đóng góp ${amount} Linh Thạch cho clan!\n📊 Tổng đóng góp của bạn: ${user.clanContribution} LT`, threadID, messageID);
+      }
+
+      // Top clan
+      if (subCmd === "top") {
+        const allUsers = Object.values(data);
+        const clans = {};
+        
+        allUsers.forEach(u => {
+          if (u.clan) {
+            if (!clans[u.clan]) {
+              clans[u.clan] = {
+                name: u.clan,
+                members: 0,
+                totalContribution: 0,
+                avgLevel: 0,
+                totalExp: 0
+              };
+            }
+            clans[u.clan].members++;
+            clans[u.clan].totalContribution += u.clanContribution || 0;
+            clans[u.clan].totalExp += u.exp;
+          }
+        });
+
+        const sortedClans = Object.values(clans)
+          .map(clan => ({
+            ...clan,
+            avgLevel: clan.totalExp / clan.members,
+            power: clan.totalContribution + (clan.totalExp / clan.members)
+          }))
+          .sort((a, b) => b.power - a.power)
+          .slice(0, 10);
+
+        let msg = "🏆 TOP CLAN:\n━━━━━━━━━━━━\n";
+        sortedClans.forEach((clan, i) => {
+          msg += `${i + 1}. 🏯 ${clan.name}\n`;
+          msg += `   👥 ${clan.members} thành viên | 💰 ${clan.totalContribution} LT\n\n`;
+        });
+        
+        return api.sendMessage(msg, threadID, messageID);
+      }
+
+      // Chiến tranh clan
+      if (subCmd === "war") {
+        if (!user.clan) return api.sendMessage("❌ Bạn chưa có clan!", threadID, messageID);
+        if (user.clanRole !== "Leader") return api.sendMessage("❌ Chỉ Leader mới có thể tuyên chiến!", threadID, messageID);
+        
+        const targetClan = args.slice(2).join(" ");
+        if (!targetClan) return api.sendMessage("❌ Vui lòng nhập tên clan đối thủ!", threadID, messageID);
+        if (targetClan === user.clan) return api.sendMessage("❌ Không thể tự chiến với clan của mình!", threadID, messageID);
+        
+        const allUsers = Object.values(data);
+        const enemyClan = allUsers.filter(u => u.clan === targetClan);
+        const myClan = allUsers.filter(u => u.clan === user.clan);
+        
+        if (enemyClan.length === 0) return api.sendMessage("❌ Clan đối thủ không tồn tại!", threadID, messageID);
+        
+        const myPower = myClan.reduce((sum, u) => sum + u.exp + (u.clanContribution || 0), 0);
+        const enemyPower = enemyClan.reduce((sum, u) => sum + u.exp + (u.clanContribution || 0), 0);
+        
+        const myRoll = Math.random() * 0.3;
+        const enemyRoll = Math.random() * 0.3;
+        
+        const myTotal = myPower * (1 + myRoll);
+        const enemyTotal = enemyPower * (1 + enemyRoll);
+        
+        let msg = `⚔️ CHIẾN TRANH CLAN!\n🏯 ${user.clan} VS ${targetClan}\n\n`;
+        
+        if (myTotal > enemyTotal) {
+          msg += `🎉 ${user.clan} THẮNG!\n💰 Mỗi thành viên nhận +100 EXP +3 LT`;
+          myClan.forEach(member => {
+            member.exp += 100;
+            member.linhThach += 3;
+          });
+        } else {
+          msg += `💔 ${user.clan} THUA!\n😔 Mỗi thành viên nhận +50 EXP +1 LT (an ủi)`;
+          myClan.forEach(member => {
+            member.exp += 50;
+            member.linhThach += 1;
+          });
+        }
+        
+        this.saveAllData(data);
+        return api.sendMessage(msg, threadID, messageID);
+      }
+
+      // Phúc lợi clan
+      if (subCmd === "buff") {
+        if (!user.clan) return api.sendMessage("❌ Bạn chưa có clan!", threadID, messageID);
+        
+        const allUsers = Object.values(data);
+        const clanMembers = allUsers.filter(u => u.clan === user.clan);
+        const totalContribution = clanMembers.reduce((sum, u) => sum + (u.clanContribution || 0), 0);
+        
+        let buffs = [];
+        let msg = `🎁 PHÚC LỢI CLAN: ${user.clan}\n━━━━━━━━━━━━\n`;
+        
+        if (totalContribution >= 100) {
+          buffs.push("🔥 +10% EXP khi train");
+          msg += `✅ Buff EXP: +10% (100+ LT)\n`;
+        } else {
+          msg += `❌ Buff EXP: Cần 100 LT (${totalContribution}/100)\n`;
+        }
+        
+        if (totalContribution >= 200) {
+          buffs.push("⚡ +15% tỉ lệ độ kiếp");
+          msg += `✅ Buff độ kiếp: +15% (200+ LT)\n`;
+        } else {
+          msg += `❌ Buff độ kiếp: Cần 200 LT (${totalContribution}/200)\n`;
+        }
+        
+        if (totalContribution >= 500) {
+          buffs.push("🛡️ Giảm 50% cooldown train");
+          msg += `✅ Buff cooldown: -50% (500+ LT)\n`;
+        } else {
+          msg += `❌ Buff cooldown: Cần 500 LT (${totalContribution}/500)\n`;
+        }
+        
+        msg += `\n💰 Tổng đóng góp clan: ${totalContribution} LT`;
+        
+        return api.sendMessage(msg, threadID, messageID);
+      }
+
+      return api.sendMessage("❌ Lệnh clan không hợp lệ! Dùng `clan` để xem menu.", threadID, messageID);
+    }
+
+    if (cmd === "clantop") {
+      return this.onRun({ api, event, args: ["clan", "top"] });
+    }
+
     if (cmd === "boss") {
       const boss = this.getBossData();
       if (!boss) return api.sendMessage("⚠️ Lỗi tải boss!", threadID, messageID);
       if (boss.defeated) return api.sendMessage("🐉 Boss đã bị tiêu diệt! Chờ boss mới...", threadID, messageID);
 
-      const dmg = Math.floor(Math.random() * 201) + 100;
+      let dmg = Math.floor(Math.random() * 201) + 100;
+      
+      // Clan buff cho boss damage
+      if (user.clan) {
+        const allUsers = Object.values(data);
+        const clanMembers = allUsers.filter(u => u.clan === user.clan);
+        const totalContribution = clanMembers.reduce((sum, u) => sum + (u.clanContribution || 0), 0);
+        if (totalContribution >= 100) dmg = Math.floor(dmg * 1.1);
+      }
+      
       boss.hp -= dmg;
       boss.damage[senderID] = (boss.damage[senderID] || 0) + dmg;
       user.bossDamage += dmg;
