@@ -233,6 +233,13 @@ module.exports = class {
         user.clanContribution += Math.floor(exp * 0.1);
         clan.totalContribution = (clan.totalContribution || 0) + Math.floor(exp * 0.1);
       }
+      
+      // Rebirth bonuses
+      if (user.rebirthBuffs) {
+        const rebirthExpBonus = user.rebirthBuffs.expMultiplier || 0;
+        const rebirthTrainBonus = user.rebirthBuffs.trainBonus || 0;
+        exp = Math.floor(exp * (1 + rebirthExpBonus + rebirthTrainBonus));
+      }
 
       user.exp += exp;
       user.trainCount++;
@@ -249,7 +256,10 @@ module.exports = class {
       this.saveClanData(clanData);
       
       let msg = `🧘 Bạn nhận được ${exp} EXP`;
-      if (user.clan) msg += ` (có bonus từ clan ${user.clan})`;
+      if (user.clan) msg += ` (clan bonus)`;
+      if (user.rebirthBuffs && (user.rebirthBuffs.expMultiplier || user.rebirthBuffs.trainBonus)) {
+        msg += ` (rebirth bonus)`;
+      }
       return api.sendMessage(msg + ".", threadID, messageID);
     }
 
@@ -273,6 +283,11 @@ module.exports = class {
       if (user.clan && clanData[user.clan]) {
         const clan = clanData[user.clan];
         rate += (clan.buildings?.altar || 0) * 0.02;
+      }
+      
+      // Rebirth bonus
+      if (user.rebirthBuffs && user.rebirthBuffs.dokiepBonus) {
+        rate += user.rebirthBuffs.dokiepBonus;
       }
       
       // Item bonus
@@ -349,6 +364,16 @@ module.exports = class {
       }
       
       if (target.petEquipped) msg += `\n🐾 Pet: ${target.petEquipped}`;
+      
+      if (target.rebirthCount > 0) {
+        msg += `\n🔄 Tái sinh: ${target.rebirthCount} lần`;
+        if (targetID === senderID && target.rebirthBuffs) {
+          msg += `\n🌟 Buff: +${(target.rebirthBuffs.expMultiplier * 100).toFixed(0)}% EXP`;
+          if (target.rebirthBuffs.dokiepBonus > 0) msg += ` | +${(target.rebirthBuffs.dokiepBonus * 100).toFixed(0)}% độ kiếp`;
+          if (target.rebirthBuffs.pvpBonus > 0) msg += ` | +${(target.rebirthBuffs.pvpBonus * 100).toFixed(0)}% PvP`;
+          if (target.rebirthBuffs.bossBonus > 0) msg += ` | +${(target.rebirthBuffs.bossBonus * 100).toFixed(0)}% Boss`;
+        }
+      }
       
       msg += `\n📊 Thống kê: ${target.dokiepCount} độ kiếp | ${target.pvpWins} PvP thắng`;
       
@@ -673,6 +698,14 @@ module.exports = class {
       if (target.clan && clanData[target.clan]) {
         targetPower += clanData[target.clan].buildings?.training || 0 * 10;
       }
+      
+      // Rebirth bonuses
+      if (user.rebirthBuffs && user.rebirthBuffs.pvpBonus) {
+        userPower = Math.floor(userPower * (1 + user.rebirthBuffs.pvpBonus));
+      }
+      if (target.rebirthBuffs && target.rebirthBuffs.pvpBonus) {
+        targetPower = Math.floor(targetPower * (1 + target.rebirthBuffs.pvpBonus));
+      }
 
       const userRoll = Math.random() * 50;
       const targetRoll = Math.random() * 50;
@@ -682,6 +715,10 @@ module.exports = class {
       let resultMsg = "", expGain = 0;
       if (userTotal > targetTotal) {
         expGain = Math.floor(targetPower / 2);
+        // Apply rebirth exp bonus
+        if (user.rebirthBuffs && user.rebirthBuffs.expMultiplier) {
+          expGain = Math.floor(expGain * (1 + user.rebirthBuffs.expMultiplier));
+        }
         resultMsg = `⚔️ Bạn đã đánh bại ${target.name}! Nhận ${expGain} EXP + 1 Linh Thạch.`;
         user.exp += expGain;
         user.pvpWins++;
@@ -689,14 +726,29 @@ module.exports = class {
         target.theChat = Math.max(10, target.theChat - 5);
       } else if (userTotal < targetTotal) {
         expGain = Math.floor(userPower / 4);
+        // Apply rebirth exp bonus
+        if (user.rebirthBuffs && user.rebirthBuffs.expMultiplier) {
+          expGain = Math.floor(expGain * (1 + user.rebirthBuffs.expMultiplier));
+        }
         resultMsg = `💥 Bạn bị ${target.name} đánh bại! Nhận ${expGain} EXP từ chiến bại.`;
         user.exp += expGain;
         user.theChat = Math.max(10, user.theChat - 5);
       } else {
         expGain = Math.floor(userPower / 3);
+        // Apply rebirth exp bonus for both
+        if (user.rebirthBuffs && user.rebirthBuffs.expMultiplier) {
+          const userExpGain = Math.floor(expGain * (1 + user.rebirthBuffs.expMultiplier));
+          user.exp += userExpGain;
+        } else {
+          user.exp += expGain;
+        }
+        if (target.rebirthBuffs && target.rebirthBuffs.expMultiplier) {
+          const targetExpGain = Math.floor(expGain * (1 + target.rebirthBuffs.expMultiplier));
+          target.exp += targetExpGain;
+        } else {
+          target.exp += expGain;
+        }
         resultMsg = `🤝 Hòa với ${target.name}! Cả hai nhận ${expGain} EXP.`;
-        user.exp += expGain;
-        target.exp += expGain;
       }
 
       user.pvpCooldown = now;
@@ -724,8 +776,13 @@ module.exports = class {
       if (done) {
         const reward = q.type === "clan" ? 5 : 2;
         user.linhThach += reward;
-        user.exp += 500;
-        msg += `\n✅ Đã hoàn thành! +500 EXP +${reward} LT`;
+        let expReward = 500;
+        // Apply rebirth exp bonus
+        if (user.rebirthBuffs && user.rebirthBuffs.expMultiplier) {
+          expReward = Math.floor(expReward * (1 + user.rebirthBuffs.expMultiplier));
+        }
+        user.exp += expReward;
+        msg += `\n✅ Đã hoàn thành! +${expReward} EXP +${reward} LT`;
         delete user.dailyQuest;
       }
 
@@ -753,9 +810,14 @@ module.exports = class {
       let msg = `🏰 Dungeon: ${pick.name}\n🔥 Độ khó: ${pick.level}`;
       
       if (pass) {
-        user.exp += pick.reward;
+        let expReward = pick.reward;
+        // Apply rebirth exp bonus
+        if (user.rebirthBuffs && user.rebirthBuffs.expMultiplier) {
+          expReward = Math.floor(expReward * (1 + user.rebirthBuffs.expMultiplier));
+        }
+        user.exp += expReward;
         user.linhThach += Math.floor(pick.level / 2);
-        msg += `\n✅ Thành công! Nhận ${pick.reward} EXP + ${Math.floor(pick.level / 2)} LT.`;
+        msg += `\n✅ Thành công! Nhận ${expReward} EXP + ${Math.floor(pick.level / 2)} LT.`;
       } else {
         user.theChat -= 10;
         msg += `\n💀 Thất bại! Mất 10 thể chất.`;
@@ -817,6 +879,11 @@ module.exports = class {
         dmg = Math.floor(dmg * (1 + (clan.buildings?.altar || 0) * 0.1));
       }
       
+      // Rebirth bonuses
+      if (user.rebirthBuffs && user.rebirthBuffs.bossBonus) {
+        dmg = Math.floor(dmg * (1 + user.rebirthBuffs.bossBonus));
+      }
+      
       boss.hp -= dmg;
       boss.damage[senderID] = (boss.damage[senderID] || 0) + dmg;
       user.bossDamage += dmg;
@@ -848,19 +915,101 @@ module.exports = class {
       return api.sendMessage(msg, threadID, messageID);
     }
 
-    // New rebirth system
+    // Enhanced rebirth system with multiple buffs
     if (cmd === "rebirth") {
       if (user.realm !== "Phi Thăng") return api.sendMessage("❌ Chỉ có thể tái sinh ở cảnh giới Phi Thăng!", threadID, messageID);
       if (user.exp < 50000) return api.sendMessage("❌ Cần tối thiểu 50,000 EXP để tái sinh!", threadID, messageID);
       
+      const currentRebirth = (user.rebirthCount || 0) + 1;
+      
+      // Base rebirth rewards
       user.realm = "Luyện Khí";
       user.exp = 0;
-      user.theChat = Math.min(200, user.theChat + 50);
-      user.linhThach += 100;
-      user.rebirthCount = (user.rebirthCount || 0) + 1;
+      user.theChat = Math.min(300, user.theChat + 50);
+      user.linhThach += 100 + (currentRebirth * 50);
+      user.rebirthCount = currentRebirth;
+      
+      // Initialize rebirth buffs if not exists
+      if (!user.rebirthBuffs) user.rebirthBuffs = {
+        expMultiplier: 0,
+        dokiepBonus: 0,
+        pvpBonus: 0,
+        bossBonus: 0,
+        trainBonus: 0
+      };
+      
+      // Progressive rebirth buffs
+      user.rebirthBuffs.expMultiplier += 0.1; // +10% EXP mỗi lần tái sinh
+      user.rebirthBuffs.dokiepBonus += 0.05;  // +5% tỉ lệ độ kiếp
+      user.rebirthBuffs.trainBonus += 0.05;   // +5% EXP train
+      
+      // Special milestone rewards
+      let specialRewards = [];
+      
+      if (currentRebirth === 1) {
+        specialRewards.push("🎯 Mở khóa: Permanent +10% EXP");
+        user.items.danexp = (user.items.danexp || 0) + 3;
+        specialRewards.push("💊 Bonus: 3 Đan EXP");
+      }
+      
+      if (currentRebirth === 3) {
+        user.rebirthBuffs.pvpBonus += 0.15;
+        specialRewards.push("⚔️ Mở khóa: +15% PvP Power");
+        user.items.ngoc = (user.items.ngoc || 0) + 2;
+        specialRewards.push("💠 Bonus: 2 Ngọc May Mắn");
+      }
+      
+      if (currentRebirth === 5) {
+        user.rebirthBuffs.bossBonus += 0.2;
+        specialRewards.push("🐲 Mở khóa: +20% Boss Damage");
+        user.items.petbox = (user.items.petbox || 0) + 1;
+        specialRewards.push("🎁 Bonus: 1 Rương Pet");
+      }
+      
+      if (currentRebirth === 10) {
+        user.rebirthBuffs.dokiepBonus += 0.1; // Extra bonus
+        specialRewards.push("🌟 Mở khóa: +10% thêm tỉ lệ độ kiếp");
+        user.linhThach += 500;
+        specialRewards.push("� Bonus: 500 Linh Thạch");
+      }
+      
+      // Random bonus every rebirth
+      const randomBonuses = [
+        { type: "exp", amount: 5000, text: "✨ 5000 EXP bonus" },
+        { type: "lt", amount: 200, text: "💎 200 Linh Thạch bonus" },
+        { type: "tc", amount: 30, text: "💪 30 Thể Chất bonus" },
+        { type: "danexp", amount: 2, text: "💊 2 Đan EXP bonus" },
+        { type: "thechat", amount: 1, text: "💼 1 Gói Thể Chất bonus" }
+      ];
+      
+      const randomBonus = randomBonuses[Math.floor(Math.random() * randomBonuses.length)];
+      switch(randomBonus.type) {
+        case "exp": user.exp += randomBonus.amount; break;
+        case "lt": user.linhThach += randomBonus.amount; break;
+        case "tc": user.theChat += randomBonus.amount; break;
+        case "danexp": user.items.danexp = (user.items.danexp || 0) + randomBonus.amount; break;
+        case "thechat": user.items.thechat = (user.items.thechat || 0) + randomBonus.amount; break;
+      }
       
       this.saveAllData(data);
-      return api.sendMessage(`🔄 Tái sinh thành công! Lần ${user.rebirthCount}\n+50 Thể chất +100 Linh Thạch`, threadID, messageID);
+      
+      let msg = `🔄 TÁI SINH THÀNH CÔNG! Lần ${currentRebirth}\n━━━━━━━━━━━━\n`;
+      msg += `💪 +50 Thể chất (Max: 300)\n`;
+      msg += `💎 +${100 + (currentRebirth * 50)} Linh Thạch\n`;
+      msg += `🎲 ${randomBonus.text}\n\n`;
+      
+      msg += `🌟 BUFF TÁI SINH:\n`;
+      msg += `✨ +${(user.rebirthBuffs.expMultiplier * 100).toFixed(0)}% EXP từ mọi nguồn\n`;
+      msg += `🌟 +${(user.rebirthBuffs.dokiepBonus * 100).toFixed(0)}% tỉ lệ độ kiếp\n`;
+      msg += `🧘 +${(user.rebirthBuffs.trainBonus * 100).toFixed(0)}% EXP train\n`;
+      if (user.rebirthBuffs.pvpBonus > 0) msg += `⚔️ +${(user.rebirthBuffs.pvpBonus * 100).toFixed(0)}% PvP Power\n`;
+      if (user.rebirthBuffs.bossBonus > 0) msg += `🐲 +${(user.rebirthBuffs.bossBonus * 100).toFixed(0)}% Boss Damage\n`;
+      
+      if (specialRewards.length > 0) {
+        msg += `\n🎁 PHẦN THƯỞNG ĐẶC BIỆT:\n${specialRewards.join('\n')}`;
+      }
+      
+      return api.sendMessage(msg, threadID, messageID);
     }
 
     return api.sendMessage("❓ Lệnh không hợp lệ. Gõ `.tutien` để xem menu.", threadID, messageID);
@@ -880,6 +1029,11 @@ module.exports = class {
       if (clan && clan.buildings?.library) {
         gain = Math.floor(gain * (1 + clan.buildings.library * 0.1));
       }
+    }
+    
+    // Rebirth bonus for passive EXP
+    if (user.rebirthBuffs && user.rebirthBuffs.expMultiplier) {
+      gain = Math.floor(gain * (1 + user.rebirthBuffs.expMultiplier));
     }
     
     user.exp += gain;
